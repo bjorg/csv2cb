@@ -95,6 +95,9 @@ namespace MindTouch.Csv2Cb {
                     var records = new List<KeyValuePair<string, string>>();
                     foreach(var row in table) {
                         var key = StringUtil.CreateAlphaNumericKey(16);
+                        if(!string.IsNullOrEmpty(doctype)) {
+                            key = doctype + ":" + key;
+                        }
                         var value = RowToJson(row, doctype);
                         records.Add(new KeyValuePair<string, string>(key, value));
                     }
