@@ -91,7 +91,9 @@ namespace MindTouch.Csv2Cb {
                     return;
                 }
                 try {
+                    Console.Error.Write("Loading file...");
                     var table = CsvTable.NewFromPath(filename, Encoding.UTF8, null);
+                    Console.Error.WriteLine("done");
                     var records = new List<KeyValuePair<string, string>>();
                     foreach(var row in table) {
                         var key = StringUtil.CreateAlphaNumericKey(16);
