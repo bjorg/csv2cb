@@ -68,17 +68,17 @@ namespace MindTouch.Csv {
         }
 
         //--- Class Methods ---
-        public static CsvTable NewFromPath(string path, Encoding encoding, string primaryKeyColumn) {
+        public static CsvTable NewFromPath(string path, Encoding encoding, string primaryKeyColumn = null) {
             using(var stream = new StreamReader(File.Open(path, FileMode.Open), encoding)) {
-                return new CsvTable(stream, primaryKeyColumn);
+                return NewFromStream(stream, primaryKeyColumn);
             }
         }
         
-        public static CsvTable NewFromStream(StreamReader stream, string primaryKeyColumn) {
+        public static CsvTable NewFromStream(TextReader stream, string primaryKeyColumn = null) {
             return new CsvTable(stream, primaryKeyColumn);
         }
         
-        public static CsvTable NewWithHeaders(IEnumerable<string> headers, string primaryKeyColumn) {
+        public static CsvTable NewWithHeaders(IEnumerable<string> headers, string primaryKeyColumn = null) {
             return new CsvTable(headers, primaryKeyColumn);
         }
         
@@ -90,7 +90,7 @@ namespace MindTouch.Csv {
         private readonly int _primaryKeyColumnIndex;
 
         //--- Constructors ---
-        private CsvTable(StreamReader stream, string primaryKeyColumn) {
+        private CsvTable(TextReader stream, string primaryKeyColumn) {
             var csv = new CsvStream(stream);
             _columns = new Dictionary<string, int>();
 
