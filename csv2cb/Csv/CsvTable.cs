@@ -149,6 +149,9 @@ namespace MindTouch.Csv {
             _rows = new List<Row>();
         }
 
+        //--- Properties ---
+        public int RowCount { get { return _rows.Count; } }
+
         //--- Operators ---
         public string[] Headers { get { return _headers; } }
 

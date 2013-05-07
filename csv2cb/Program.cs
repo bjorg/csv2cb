@@ -53,7 +53,11 @@ namespace MindTouch.Csv2Cb {
 
         //--- Class Methods ---
         public static void Main(string[] args) {
-            Console.WriteLine("MindTouch CSV2CB - Import CSV files into Couchbase");
+            var console = Console.Error;
+            console.WriteLine("MindTouch CSV2CB - Import CSV files into Couchbase");
+            console.WriteLine();
+
+            // parse command line options
             string password = null;
             XUri host = null;
             string doctype = null;
@@ -74,7 +78,7 @@ namespace MindTouch.Csv2Cb {
 
             // validate arguments
             if(host == null) {
-                Console.Error.WriteLine("ERROR: missing hostname");
+                console.WriteLine("ERROR: missing hostname");
                 return;
             }
 
@@ -87,73 +91,76 @@ namespace MindTouch.Csv2Cb {
                 }
                 _client.Remove(key);
             } catch(Exception e) {
-                Console.Error.WriteLine("ERROR: {0}", e.Message);
+                console.WriteLine("ERROR: {0}", e.Message);
                 return;
             }
 
             // process all files
             var loadStopwatch = new Stopwatch();
             var convertStopwatch = new Stopwatch();
-            var uploadStopwatch = new Stopwatch();
+            var importStopwatch = new Stopwatch();
             var total = 0;
-            var uploadFailed = 0;
+            var importFailedTotal = 0;
             try {
                 foreach(var filename in filenames) {
                     if(!File.Exists(filename)) {
-                        Console.Error.WriteLine("ERROR: unable to find '{0}'", filename);
+                        console.WriteLine("ERROR: unable to find '{0}'", filename);
                         return;
                     }
                     try {
 
                         // load CSV file
-                        Console.Error.Write("Loading file...");
+                        console.Write("Loading file '{0}'...", filename);
                         loadStopwatch.Start();
                         var table = CsvTable.NewFromPath(filename, Encoding.UTF8, null);
                         loadStopwatch.Stop();
-                        Console.Error.WriteLine("done");
+                        console.WriteLine("done ({0:#,##0} rows)", table.RowCount);
 
                         // converting from CSV to JSON documents
-                        Console.Error.Write("Converting records...");
+                        console.Write("Converting rows...");
+                        var documents = new List<KeyValuePair<string, string>>();
                         convertStopwatch.Start();
-                        var records = new List<KeyValuePair<string, string>>();
                         foreach(var row in table) {
                             var key = StringUtil.CreateAlphaNumericKey(16);
                             if(!string.IsNullOrEmpty(doctype)) {
                                 key = doctype + ":" + key;
                             }
                             var value = RowToJson(row, doctype);
-                            records.Add(new KeyValuePair<string, string>(key, value));
+                            documents.Add(new KeyValuePair<string, string>(key, value));
                         }
                         convertStopwatch.Stop();
-                        total += records.Count;
-                        Console.Error.WriteLine("done");
+                        total += documents.Count;
+                        console.WriteLine("done ({0:#,##0} documents)", documents.Count);
 
-                        // uploading JSON documents
-                        if(records.Any()) {
-                            Console.Error.Write("Uploading documents...");
-                            uploadStopwatch.Start();
-                            Send(records, out uploadFailed);
-                            uploadStopwatch.Stop();
-                            Console.Error.WriteLine("done");
+                        // importing JSON documents
+                        if(documents.Any()) {
+                            console.Write("Importing documents...");
+                            int importFailed;
+                            importStopwatch.Start();
+                            Send(documents, out importFailed);
+                            importStopwatch.Stop();
+                            importFailedTotal += importFailed;
+                            console.WriteLine("done (successful: {0:#,##0}; failed: {1:#,##0})", documents.Count - importFailed, importFailed);
                         }
                     } catch(Exception e) {
-                        Console.Error.WriteLine("ERROR: error loading file '{0}': {1}", filename, e.Message);
+                        console.WriteLine("ERROR: error loading file '{0}': {1}", filename, e.Message);
                         return;
                     }
                 }
             } finally {
                 loadStopwatch.Stop();
                 convertStopwatch.Stop();
-                uploadStopwatch.Stop();
+                importStopwatch.Stop();
                 var loadTime = loadStopwatch.Elapsed.TotalSeconds;
                 var convertTime = convertStopwatch.Elapsed.TotalSeconds;
-                var uploadTime = uploadStopwatch.Elapsed.TotalSeconds;
-                Console.Error.WriteLine("{0:#,##0.000} seconds elapsed (load: {1:#,##0.000}, convert: {2:#,##0.000}, upload: {3:#,##0.000})", loadTime + convertTime + uploadTime, loadTime, convertTime, uploadTime);
-                Console.Error.WriteLine("{0:#,##0} records loaded ({1:#,##0.000} records/second)", total, total / loadTime);
-                Console.Error.WriteLine("{0:#,##0} records converted ({1:#,##0.000} records/second)", total, total / convertTime);
-                Console.Error.WriteLine("{0:#,##0} records uploaded ({1:#,##0.000} records/second)", total - uploadFailed, (total - uploadFailed) / uploadTime);
-                if(uploadFailed > 0) {
-                    Console.Error.WriteLine("WARNING: {0:#,##0} records failed to upload!", uploadFailed);
+                var importTime = importStopwatch.Elapsed.TotalSeconds;
+                console.WriteLine();
+                console.WriteLine("{0:#,##0.000} seconds elapsed (loading: {1:#,##0.000}s, converting: {2:#,##0.000}s, importing: {3:#,##0.000}s)", loadTime + convertTime + importTime, loadTime, convertTime, importTime);
+                console.WriteLine("{0:#,##0} records loaded ({1:#,##0.000} records/second)", total, total / loadTime);
+                console.WriteLine("{0:#,##0} records converted ({1:#,##0.000} records/second)", total, total / convertTime);
+                console.WriteLine("{0:#,##0} records imported ({1:#,##0.000} records/second)", total - importFailedTotal, (total - importFailedTotal) / importTime);
+                if(importFailedTotal > 0) {
+                    console.WriteLine("WARNING: {0:#,##0} records failed to import!", importFailedTotal);
                 }
             }
         }
@@ -241,13 +248,6 @@ namespace MindTouch.Csv2Cb {
                             // couchbase has run out of disk space; time to give up
                             skipped = records.Count() - sent;
                             return;
-                        }
-                        
-                        // unknown error encountered
-                        if(result.StatusCode.HasValue) {
-                            Console.Error.Write("{0} ", result.StatusCode);
-                        } else {
-                            Console.Error.Write("!");
                         }
                         ++skipped;
                         break;
