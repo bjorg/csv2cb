@@ -64,23 +64,25 @@ namespace MindTouch.Csv2Cb {
             bool help = false;
             string select = null;
             var options = new OptionSet {
-                { "host=", v => host = XUri.TryParse(v) },
-                { "password=", v => password = v },
-                { "doctype=", v => doctype = v },
-                { "select=", v => select = v },
-                { "h|?|help", v => help = (v != null) }
+                { "host=", "Couchbase hostname with bucket name.\nExample: http://example.com:8091/bucket", v => host = XUri.TryParse(v) },
+                { "password=", "(optional) Password for Couchbase bucket.", v => password = v },
+                { "doctype=", "(optional) Document type identifier (doctype) to add to each converted JSON document.", v => doctype = v },
+                { "select=", "(optional) List of CSV columns to import. By default, all columns are imported.", v => select = v },
+                { "h|?|help", "This help text", v => help = (v != null) }
             };
             var filenames = options.Parse(args);
 
             // show help if requested
             if(help) {
-                options.WriteOptionDescriptions(Console.Out);
+                WriteOptions(Console.Out, options);
                 return;
             }
 
             // validate arguments
             if(host == null) {
-                console.WriteLine("ERROR: missing hostname");
+                console.WriteLine("ERROR: missing couchbase hostname");
+                console.WriteLine();
+                WriteOptions(Console.Out, options);
                 return;
             }
             HashSet<string> columns = null;
@@ -184,6 +186,15 @@ namespace MindTouch.Csv2Cb {
                     console.WriteLine("WARNING: {0:#,##0} records failed to import!", importFailedTotal);
                 }
             }
+        }
+
+        private static void WriteOptions(TextWriter output, OptionSet options) {
+            output.WriteLine("usage: csv2cb --host=<hostname>");
+            output.WriteLine("              [ --password=<pwd> ]");
+            output.WriteLine("              [ --doctype=<doctype> ]");
+            output.WriteLine("              [ --select=<columns> ]");
+            output.WriteLine("              <file> ...");
+            options.WriteOptionDescriptions(output);
         }
 
         private static CouchbaseClient CreateClient(XUri host, string password) {
