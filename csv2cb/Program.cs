@@ -34,6 +34,7 @@ using MindTouch.Csv;
 using MindTouch.Dream;
 using NDesk.Options;
 using Newtonsoft.Json;
+using System.Diagnostics;
 
 namespace MindTouch.Csv2Cb {
     internal class MainClass {
@@ -58,8 +59,8 @@ namespace MindTouch.Csv2Cb {
             string doctype = null;
             bool help = false;
             var options = new OptionSet {
-                { "host=", v => host = XUri.TryParse(v) },
-                { "password=", v => password = v },
+                { "H|host=", v => host = XUri.TryParse(v) },
+                { "P|password=", v => password = v },
                 { "doctype=", v => doctype = v },
                 { "h|?|help", v => help = (v != null) }
             };
@@ -68,6 +69,12 @@ namespace MindTouch.Csv2Cb {
             // show help if requested
             if(help) {
                 options.WriteOptionDescriptions(Console.Out);
+                return;
+            }
+
+            // validate arguments
+            if(host == null) {
+                Console.Error.WriteLine("ERROR: missing hostname");
                 return;
             }
 
@@ -85,31 +92,68 @@ namespace MindTouch.Csv2Cb {
             }
 
             // process all files
-            foreach(var filename in filenames) {
-                if(!File.Exists(filename)) {
-                    Console.Error.WriteLine("ERROR: unable to find '{0}'", filename);
-                    return;
-                }
-                try {
-                    Console.Error.Write("Loading file...");
-                    var table = CsvTable.NewFromPath(filename, Encoding.UTF8, null);
-                    Console.Error.WriteLine("done");
-                    var records = new List<KeyValuePair<string, string>>();
-                    foreach(var row in table) {
-                        var key = StringUtil.CreateAlphaNumericKey(16);
-                        if(!string.IsNullOrEmpty(doctype)) {
-                            key = doctype + ":" + key;
+            var loadStopwatch = new Stopwatch();
+            var convertStopwatch = new Stopwatch();
+            var uploadStopwatch = new Stopwatch();
+            var total = 0;
+            var uploadFailed = 0;
+            try {
+                foreach(var filename in filenames) {
+                    if(!File.Exists(filename)) {
+                        Console.Error.WriteLine("ERROR: unable to find '{0}'", filename);
+                        return;
+                    }
+                    try {
+
+                        // load CSV file
+                        Console.Error.Write("Loading file...");
+                        loadStopwatch.Start();
+                        var table = CsvTable.NewFromPath(filename, Encoding.UTF8, null);
+                        loadStopwatch.Stop();
+                        Console.Error.WriteLine("done");
+
+                        // converting from CSV to JSON documents
+                        Console.Error.Write("Converting records...");
+                        convertStopwatch.Start();
+                        var records = new List<KeyValuePair<string, string>>();
+                        foreach(var row in table) {
+                            var key = StringUtil.CreateAlphaNumericKey(16);
+                            if(!string.IsNullOrEmpty(doctype)) {
+                                key = doctype + ":" + key;
+                            }
+                            var value = RowToJson(row, doctype);
+                            records.Add(new KeyValuePair<string, string>(key, value));
                         }
-                        var value = RowToJson(row, doctype);
-                        records.Add(new KeyValuePair<string, string>(key, value));
+                        convertStopwatch.Stop();
+                        total += records.Count;
+                        Console.Error.WriteLine("done");
+
+                        // uploading JSON documents
+                        if(records.Any()) {
+                            Console.Error.Write("Uploading documents...");
+                            uploadStopwatch.Start();
+                            Send(records, out uploadFailed);
+                            uploadStopwatch.Stop();
+                            Console.Error.WriteLine("done");
+                        }
+                    } catch(Exception e) {
+                        Console.Error.WriteLine("ERROR: error loading file '{0}': {1}", filename, e.Message);
+                        return;
                     }
-                    if(records.Any()) {
-                        int skipped;
-                        Send(records, out skipped);
-                    }
-                } catch(Exception e) {
-                    Console.Error.WriteLine("ERROR: error loading file '{0}': {1}", filename, e.Message);
-                    return;
+                }
+            } finally {
+                loadStopwatch.Stop();
+                convertStopwatch.Stop();
+                uploadStopwatch.Stop();
+                var loadTime = loadStopwatch.Elapsed.TotalSeconds;
+                var convertTime = convertStopwatch.Elapsed.TotalSeconds;
+                var uploadTime = uploadStopwatch.Elapsed.TotalSeconds;
+                Console.Error.WriteLine("{0:#,##0.000} seconds elapsed (load: {1:#,##0.000}, convert: {2:#,##0.000}, upload: {3:#,##0.000})", loadTime + convertTime + uploadTime, loadTime, convertTime, uploadTime);
+                Console.Error.WriteLine("{0:#,##0} records loaded ({1:#,##0.000} records/second)", total, total / loadTime);
+                Console.Error.WriteLine("{0:#,##0} records converted ({1:#,##0.000} records/second)", total, total / convertTime);
+                Console.Error.WriteLine("{0:#,##0} records uploaded ({1:#,##0.000} records/second)", total - uploadFailed, (total - uploadFailed) / uploadTime);
+                if(uploadFailed > 0) {
+                    Console.Error.WriteLine("WARNING: {0:#,##0} records failed to upload!", uploadFailed);
                 }
             }
         }
@@ -154,7 +198,6 @@ namespace MindTouch.Csv2Cb {
         }
 
         public static void Send(IEnumerable<KeyValuePair<string, string>> records, out int skipped) {
-            Console.Error.Write("Uploading data...");
             _skippedRecords = 0;
             if(records.Count() < MIN_RECORDS) {
                 Send_Helper(records);
@@ -173,7 +216,6 @@ namespace MindTouch.Csv2Cb {
                 }
             }
             skipped = _skippedRecords;
-            Console.Error.WriteLine("done");
         }
 
         private static void Send_Helper(IEnumerable<KeyValuePair<string, string>> records) {
