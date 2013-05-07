@@ -62,10 +62,12 @@ namespace MindTouch.Csv2Cb {
             XUri host = null;
             string doctype = null;
             bool help = false;
+            string select = null;
             var options = new OptionSet {
-                { "H|host=", v => host = XUri.TryParse(v) },
-                { "P|password=", v => password = v },
+                { "host=", v => host = XUri.TryParse(v) },
+                { "password=", v => password = v },
                 { "doctype=", v => doctype = v },
+                { "select=", v => select = v },
                 { "h|?|help", v => help = (v != null) }
             };
             var filenames = options.Parse(args);
@@ -80,6 +82,22 @@ namespace MindTouch.Csv2Cb {
             if(host == null) {
                 console.WriteLine("ERROR: missing hostname");
                 return;
+            }
+            HashSet<string> columns = null;
+            if(select != null) {
+                try {
+                    CsvTable schema = null;
+                    using(var reader = new StringReader(select)) {
+                        schema = CsvTable.NewFromStream(reader);
+                    }
+                    columns = new HashSet<string>();
+                    foreach(var column in schema.Headers) {
+                        columns.Add(column);
+                    }
+                } catch(Exception e) {
+                    console.WriteLine("ERROR: {0}", e.Message);
+                    return;
+                }
             }
 
             // create client and verify connection
@@ -99,7 +117,7 @@ namespace MindTouch.Csv2Cb {
             var loadStopwatch = new Stopwatch();
             var convertStopwatch = new Stopwatch();
             var importStopwatch = new Stopwatch();
-            var total = 0;
+            var documentTotal = 0;
             var importFailedTotal = 0;
             try {
                 foreach(var filename in filenames) {
@@ -112,7 +130,7 @@ namespace MindTouch.Csv2Cb {
                         // load CSV file
                         console.Write("Loading file '{0}'...", filename);
                         loadStopwatch.Start();
-                        var table = CsvTable.NewFromPath(filename, Encoding.UTF8, null);
+                        var table = CsvTable.NewFromPath(filename, Encoding.UTF8);
                         loadStopwatch.Stop();
                         console.WriteLine("done ({0:#,##0} rows)", table.RowCount);
 
@@ -121,15 +139,18 @@ namespace MindTouch.Csv2Cb {
                         var documents = new List<KeyValuePair<string, string>>();
                         convertStopwatch.Start();
                         foreach(var row in table) {
+                            var value = RowToJson(columns, row, doctype);
+                            if(value == null) {
+                                continue;
+                            }
                             var key = StringUtil.CreateAlphaNumericKey(16);
                             if(!string.IsNullOrEmpty(doctype)) {
                                 key = doctype + ":" + key;
                             }
-                            var value = RowToJson(row, doctype);
                             documents.Add(new KeyValuePair<string, string>(key, value));
                         }
                         convertStopwatch.Stop();
-                        total += documents.Count;
+                        documentTotal += documents.Count;
                         console.WriteLine("done ({0:#,##0} documents)", documents.Count);
 
                         // importing JSON documents
@@ -140,7 +161,7 @@ namespace MindTouch.Csv2Cb {
                             Send(documents, out importFailed);
                             importStopwatch.Stop();
                             importFailedTotal += importFailed;
-                            console.WriteLine("done (successful: {0:#,##0}; failed: {1:#,##0})", documents.Count - importFailed, importFailed);
+                            console.WriteLine("done ({0:#,##0} documents)", documents.Count - importFailed);
                         }
                     } catch(Exception e) {
                         console.WriteLine("ERROR: error loading file '{0}': {1}", filename, e.Message);
@@ -156,9 +177,9 @@ namespace MindTouch.Csv2Cb {
                 var importTime = importStopwatch.Elapsed.TotalSeconds;
                 console.WriteLine();
                 console.WriteLine("{0:#,##0.000} seconds elapsed (loading: {1:#,##0.000}s, converting: {2:#,##0.000}s, importing: {3:#,##0.000}s)", loadTime + convertTime + importTime, loadTime, convertTime, importTime);
-                console.WriteLine("{0:#,##0} records loaded ({1:#,##0.000} records/second)", total, total / loadTime);
-                console.WriteLine("{0:#,##0} records converted ({1:#,##0.000} records/second)", total, total / convertTime);
-                console.WriteLine("{0:#,##0} records imported ({1:#,##0.000} records/second)", total - importFailedTotal, (total - importFailedTotal) / importTime);
+                console.WriteLine("{0:#,##0} records loaded ({1:#,##0.000} records/second)", documentTotal, documentTotal / loadTime);
+                console.WriteLine("{0:#,##0} records converted ({1:#,##0.000} records/second)", documentTotal, documentTotal / convertTime);
+                console.WriteLine("{0:#,##0} records imported ({1:#,##0.000} records/second)", documentTotal - importFailedTotal, (documentTotal - importFailedTotal) / importTime);
                 if(importFailedTotal > 0) {
                     console.WriteLine("WARNING: {0:#,##0} records failed to import!", importFailedTotal);
                 }
@@ -173,12 +194,12 @@ namespace MindTouch.Csv2Cb {
             }
             var config = new CouchbaseClientConfiguration();
             config.Urls.Add(host.WithoutPathQueryFragment().At("pools"));
-            config.Bucket = !ArrayUtil.IsNullOrEmpty(host.Segments) && (host.Segments.Length == 1) ?  host.Segments[0] : null;
+            config.Bucket = !ArrayUtil.IsNullOrEmpty(host.Segments) && (host.Segments.Length == 1) ? host.Segments[0] : null;
             config.BucketPassword = password;
             return new CouchbaseClient(config);
         }
 
-        private static string RowToJson(CsvTable.Row row, string doctype) {
+        private static string RowToJson(HashSet<string> columns, CsvTable.Row row, string doctype) {
             var buffer = new StringWriter();
             var writer = new JsonTextWriter(buffer);
             writer.WriteStartObject();
@@ -186,7 +207,12 @@ namespace MindTouch.Csv2Cb {
                 writer.WritePropertyName("doctype");
                 writer.WriteValue(doctype);
             }
+            var empty = true;
             for(var i = 0; i < row.Table.Headers.Length; ++i) {
+                if((columns != null) && !columns.Contains(row.Table.Headers[i])) {
+                    continue;
+                }
+                empty = false;
                 writer.WritePropertyName(row.Table.Headers[i]);
                 var value = row[i];
                 double number;
@@ -199,6 +225,9 @@ namespace MindTouch.Csv2Cb {
                 } else {
                     writer.WriteValue(value);
                 }
+            }
+            if(empty) {
+                return null;
             }
             writer.WriteEndObject();
             return buffer.ToString();
