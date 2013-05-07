@@ -3,6 +3,12 @@ Microsoft Visual Studio Solution File, Format Version 11.00
 # Visual Studio 2010
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "csv2cb", "csv2cb\csv2cb.csproj", "{EB6A79F7-EAFA-47E6-B76D-31638081415E}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{FD466DF0-70C9-430D-B734-A0138BE5F43A}"
+	ProjectSection(SolutionItems) = preProject
+		LICENSE = LICENSE
+		README.md = README.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
@@ -13,6 +19,8 @@ Global
 		{EB6A79F7-EAFA-47E6-B76D-31638081415E}.Debug|x86.Build.0 = Debug|x86
 		{EB6A79F7-EAFA-47E6-B76D-31638081415E}.Release|x86.ActiveCfg = Release|x86
 		{EB6A79F7-EAFA-47E6-B76D-31638081415E}.Release|x86.Build.0 = Release|x86
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
 	EndGlobalSection
 	GlobalSection(MonoDevelopProperties) = preSolution
 		StartupItem = csv2cb\csv2cb.csproj
