@@ -1,5 +1,5 @@
-MindTouch CSV2CB - Import CSV files into Couchbase
-==================================================
+CSV2CB - Import CSV files into Couchbase
+========================================
 
 CSV2CB is a command line tool to convert a CSV file into JSON document and upload them to a 
 [Couchbase](http://www.couchbase.com/) bucket.  Multiple CSV files can be uploaded to the same Couchbase
