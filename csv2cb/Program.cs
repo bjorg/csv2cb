@@ -48,8 +48,8 @@ namespace MindTouch.Csv2Cb {
 
         //--- Class Fields ---
         private static CouchbaseClient _client;
-        private static volatile int _skippedRecords;
-        private static volatile int _threadCount;
+        private static int _skippedRecords;
+        private static int _threadCount;
 
         //--- Class Methods ---
         public static void Main(string[] args) {
@@ -258,11 +258,11 @@ namespace MindTouch.Csv2Cb {
                     Interlocked.Increment(ref _threadCount);
                     new Thread(() => Send_Helper(subRecords)).Start();
                 }
-                while(_threadCount > 0) {
+                while(Thread.VolatileRead(ref _threadCount) > 0) {
                     Thread.Sleep(250);
                 }
             }
-            skipped = _skippedRecords;
+            skipped = Thread.VolatileRead(ref _skippedRecords);
         }
 
         private static void Send_Helper(IEnumerable<KeyValuePair<string, string>> records) {
