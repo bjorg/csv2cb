@@ -116,11 +116,14 @@ let ActionOnAllRows (host : XUri) (password : String) (act : CouchbaseClient -> 
             printf "..."
         let rows = (if hasDocId then view.StartKey(docid).Skip(1) else view).Stale(StaleMode.False).Reduce(false).Limit(MAX_DOCUMENTS).ToArray()
         printfn "done (%i records)." (rows.Length)
-        for row in rows do
-            try
-                act client row
-            with
-                | e -> printfn "Error: %s (id=%s)" (e.ToString()) (row.ItemId.ToString())
+        Async.Parallel [
+            for row in rows -> async {
+                try
+                    act client row
+                with
+                    | e -> printfn "Error: %s (id=%s)" (e.ToString()) (row.ItemId.ToString()) 
+            } 
+        ] |> Async.RunSynchronously |> ignore
         printfn ""
         if rows.Length = MAX_DOCUMENTS then
             fetchNextRows <| rows.Last().ItemId
