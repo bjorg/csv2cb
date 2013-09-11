@@ -28,12 +28,11 @@ open Couchbase.Configuration
 open Enyim.Caching.Memcached
 open MindTouch.Dream
 
-exception CouchbaseOperationFailed of String
 
 let MAX_DOCUMENTS = 1000
 
 let DeleteRow (client : CouchbaseClient) (row : IViewRow) =
-    printfn "Deleting id=%s" <| row.ItemId.ToString()
+    printf "."
     client.Remove(row.ItemId) |> ignore
 
 let PrintRow (client : CouchbaseClient) (row : IViewRow) =
@@ -49,6 +48,12 @@ type Command =
     | Action of XUri * (CouchbaseClient -> IViewRow -> Unit)
 
 let ShowUsage (error : String) =
+    
+    // TODO (steveb): better command line args
+    // --host=<hostname>
+    // --query=<design/view>
+    // --limit=<100>
+    
     printfn "MindTouch CBCLI - Commandline interface for Couchbase"
     printfn ""
     if error <> null then
@@ -70,7 +75,7 @@ let ParseArgs (args : String[]) =
         let host = XUri.TryParse(args.[0])
         if host = null then
             Error "hostname is not valid"
-        else if host.Segments.Length <> 3 then
+        elif host.Segments.Length <> 3 then
             Error "hostname must have three segments: bucket/design_doc/view"
         else
             match args.[1] with
@@ -94,13 +99,12 @@ let ActionOnAllRows (host : XUri) (password : String) (act : CouchbaseClient -> 
     printf "Testing connection..."
     let key = "test:" + StringUtil.CreateAlphaNumericKey(16)
     if not(client.Store(StoreMode.Set, key, "success!")) then
-        raise(CouchbaseOperationFailed("unable to connect to couchbase server"))
+        failwith "unable to connect to couchbase server"
     client.Remove(key) |> ignore
     printfn "done."
     
     // initialize action and view
     let view = client.GetView(host.Segments.[1], host.Segments.[2]) 
-    let actOnClient = act client
     
     // create recursive function to retrieve all records matched by the view
     let rec fetchNextRows (docid : String) = 
@@ -114,9 +118,10 @@ let ActionOnAllRows (host : XUri) (password : String) (act : CouchbaseClient -> 
         printfn "done (%i records)." (rows.Length)
         for row in rows do
             try
-                actOnClient row
+                act client row
             with
                 | e -> printfn "Error: %s (id=%s)" (e.ToString()) (row.ItemId.ToString())
+        printfn ""
         if rows.Length = MAX_DOCUMENTS then
             fetchNextRows <| rows.Last().ItemId
         else
